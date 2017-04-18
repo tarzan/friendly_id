@@ -111,13 +111,29 @@ method.
     # to be conflicts. This will allow a record to revert to a previously
     # used slug.
     def scope_for_slug_generator
-      relation = super
-      return relation if new_record?
-      relation = relation.joins(:slugs).merge(Slug.where('sluggable_id <> ?', id))
+      return super if new_record?
+
+      relation = self.class.base_class.unscoped.friendly
+                           .joins(left_join_slugs_arel)
+                           .where.not(id: id)
+
       if friendly_id_config.uses?(:scoped)
         relation = relation.where(Slug.arel_table[:scope].eq(serialized_scope))
       end
       relation
+    end
+
+    def left_join_slugs_arel
+      model_class = self.class.base_class
+
+      own_table = model_class.arel_table
+      primary_key_name = model_class.primary_key
+      slug_table = Slug.arel_table
+
+      own_table.join(slug_table, Arel::Nodes::OuterJoin)
+               .on(own_table[primary_key_name].eq(slug_table[:sluggable_id])
+                   .and(slug_table[:sluggable_type].eq(model_class.name)))
+               .join_sources
     end
 
     def create_slug
